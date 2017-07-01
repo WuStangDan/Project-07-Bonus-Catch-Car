@@ -119,24 +119,27 @@ int main()
         // Inital is mode 0. Once within range switch to mode 1.
         // Mode 1 will switch to mode 2 once arrived at location.
         // If car isn't caught after 3 seconds in mode 2. Back to mode 0.
-        if (diff_hunter_chase < 2.5) {
+        int predict_horizon = 20;
+        if (diff_hunter_chase < 0.5) {
           if (mode == 0) { // If just changed modes, reset counter.
             ukf.counter = 0;
             mode = 1;
           }
+        } else {
+          predict_horizon = diff_hunter_chase*2;
         }
 
         if (mode == 0) { // Far away.
           if ((ukf.counter % 100 == 0)) {
-            cout << "Updating predicted location." << endl;
+            cout << "Updating predicted location. horz "<< predict_horizon << endl;
             target_x = ukf.x_[0];
             target_y = ukf.x_[1];
             current_v = ukf.x_[2];
             current_psi = ukf.x_[3];
             current_psi_dot = ukf.x_[4];
 
-            // Aim for car position 1 second in the future.
-            for (int i = 0; i < 10; i++) {
+            // Aim for car position 0.5 second in the future.
+            for (int i = 0; i < predict_horizon; i++) {
               target_x += current_v*cos(current_psi)*0.1;
               target_y += current_v*sin(current_psi)*0.1;
               current_psi += current_psi_dot*0.1;
@@ -156,8 +159,8 @@ int main()
             current_psi = ukf.x_[3];
             current_psi_dot = ukf.x_[4];
 
-            // Aim for car position 1 second in the future.
-            for (int i = 0; i < 30; i++) {
+            // Aim for car position 2 second in the future.
+            for (int i = 0; i < 20; i++) {
               target_x += current_v*cos(current_psi)*0.1;
               target_y += current_v*sin(current_psi)*0.1;
               current_psi += current_psi_dot*0.1;
@@ -168,13 +171,17 @@ int main()
         }
 
         if (mode == 2) { // Drive straight at target.
-          cout << "Drive direct." << endl;
-          target_x = ukf.x_[0];
-          target_y = ukf.x_[1];
+          if (diff_hunter_chase < 2) {
+            cout << "Drive direct." << endl;
+            target_x = ukf.x_[0];
+            target_y = ukf.x_[1];
+          } else {
+            cout << "Wait for car or counter." << endl;
+          }
           ukf.counter += 1;
           // Didn't get ahead and thus haven't caught car after 3 seconds.
           // Start back at mode 0.
-          if (ukf.counter > 1000) {
+          if (ukf.counter > 400) {
             mode = 0;
           }
         }
@@ -195,7 +202,7 @@ int main()
 
 
         // This will only happen when waiting for car at its future location.
-        if (distance_difference < 0.001) {
+        if (distance_difference < 0.1) {
           cout << "At Location." << endl;
           heading_difference = 0.0;
           distance_difference = 0.0;
