@@ -37,8 +37,9 @@ int main()
   double current_v = 0.0;
   double current_psi = 0.0;
   double current_psi_dot = 0.0;
+  int mode = 0; // 0 far chase, 1 wait ahead, 2 drive direct at target.
 
-  h.onMessage([&ukf,&target_x,&target_y, &current_v, &current_psi, &current_psi_dot](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, uWS::OpCode opCode) {
+  h.onMessage([&ukf,&target_x,&target_y, &current_v, &current_psi, &current_psi_dot, &mode](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
@@ -107,20 +108,77 @@ int main()
           meas_package_R.timestamp_ = timestamp_R;
 
     	  ukf.ProcessMeasurement(meas_package_R);
-        if (ukf.counter % 900 == 0) {
-          target_x = ukf.x_[0];
-          target_y = ukf.x_[1];
-          current_v = ukf.x_[2];
-          current_psi = ukf.x_[3];
-          current_psi_dot = ukf.x_[4];
 
-          // Predict car 1 second into the future.
-          for (int i = 0; i < 10; i++) {
-            target_x += current_v*cos(current_psi)*0.1;
-            target_y += current_v*sin(current_psi)*0.1;
-            current_psi += current_psi_dot*0.1;
+        // Calculate distance between chase car and hunter.
+        double diff_hunter_chase = sqrt((ukf.x_[1] - hunter_y)*(ukf.x_[1] - hunter_y)
+                                      + (ukf.x_[0] - hunter_x)*(ukf.x_[0] - hunter_x));
+
+
+
+
+        // Inital is mode 0. Once within range switch to mode 1.
+        // Mode 1 will switch to mode 2 once arrived at location.
+        // If car isn't caught after 3 seconds in mode 2. Back to mode 0.
+        if (diff_hunter_chase < 2.5) {
+          if (mode == 0) { // If just changed modes, reset counter.
+            ukf.counter = 0;
+            mode = 1;
           }
         }
+
+        if (mode == 0) { // Far away.
+          if ((ukf.counter % 100 == 0)) {
+            cout << "Updating predicted location." << endl;
+            target_x = ukf.x_[0];
+            target_y = ukf.x_[1];
+            current_v = ukf.x_[2];
+            current_psi = ukf.x_[3];
+            current_psi_dot = ukf.x_[4];
+
+            // Aim for car position 1 second in the future.
+            for (int i = 0; i < 10; i++) {
+              target_x += current_v*cos(current_psi)*0.1;
+              target_y += current_v*sin(current_psi)*0.1;
+              current_psi += current_psi_dot*0.1;
+            }
+            // Reset counter.
+            ukf.counter = 1;
+          }
+          ukf.counter += 1;
+        }
+
+        if (mode == 1) { // Wait ahead.
+          if ((ukf.counter == 0)) {
+            cout << "Wait ahead." << endl;
+            target_x = ukf.x_[0];
+            target_y = ukf.x_[1];
+            current_v = ukf.x_[2];
+            current_psi = ukf.x_[3];
+            current_psi_dot = ukf.x_[4];
+
+            // Aim for car position 1 second in the future.
+            for (int i = 0; i < 30; i++) {
+              target_x += current_v*cos(current_psi)*0.1;
+              target_y += current_v*sin(current_psi)*0.1;
+              current_psi += current_psi_dot*0.1;
+            }
+            // Reset counter.
+            ukf.counter = 1;
+          }
+        }
+
+        if (mode == 2) { // Drive straight at target.
+          cout << "Drive direct." << endl;
+          target_x = ukf.x_[0];
+          target_y = ukf.x_[1];
+          ukf.counter += 1;
+          // Didn't get ahead and thus haven't caught car after 3 seconds.
+          // Start back at mode 0.
+          if (ukf.counter > 1000) {
+            mode = 0;
+          }
+        }
+
 
 
 
@@ -132,8 +190,18 @@ int main()
     	  while (heading_difference > M_PI) heading_difference-=2.*M_PI;
     	  while (heading_difference <-M_PI) heading_difference+=2.*M_PI;
 
-    	  double distance_difference = sqrt((target_y - hunter_y)*(target_y - hunter_y) + (target_x - hunter_x)*(target_x - hunter_x));
-        //cout << distance_difference << endl;
+        double distance_difference = sqrt((target_y - hunter_y)*(target_y - hunter_y)
+                                      + (target_x - hunter_x)*(target_x - hunter_x));
+
+
+        // This will only happen when waiting for car at its future location.
+        if (distance_difference < 0.001) {
+          cout << "At Location." << endl;
+          heading_difference = 0.0;
+          distance_difference = 0.0;
+          mode = 2;
+          ukf.counter = 0;
+        }
 
           json msgJson;
           msgJson["turn"] = heading_difference;

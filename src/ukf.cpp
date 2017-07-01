@@ -120,7 +120,6 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
   if(meas_package.sensor_type_ == MeasurementPackage::RADAR) {
     //std::cout << "Start Radar update" << std::endl;
     UpdateRadar(meas_package);
-    counter += 1;
     //std::cout << "Measured angle " << meas_package.raw_measurements_[1] << std::endl;
   }
 
